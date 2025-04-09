@@ -3,21 +3,21 @@
 #include <Keypad.h>
 #include <ESP32Servo.h>
 
-// RFID模块引脚定义
-#define SS_PIN  5    // ESP32的SDA(SS)连接到GPIO5
-#define RST_PIN 22   // ESP32的RST连接到GPIO22
+// RFID module pin definitions
+#define SS_PIN  5    // ESP32's SDA(SS) connected to GPIO5
+#define RST_PIN 22   // ESP32's RST connected to GPIO22
 
-// LED灯引脚
-#define LED_PIN 2    // ESP32主板上自带的LED通常连接到GPIO2
+// LED pin
+#define LED_PIN 2    // ESP32 onboard LED typically connected to GPIO2
 
-// 舵机引脚
-#define SERVO_PIN 15 // 舵机连接到GPIO15
+// Servo pin
+#define SERVO_PIN 15 // Servo connected to GPIO15
 
-// 定义键盘的行数和列数
+// Define keypad rows and columns
 const byte ROWS = 4;
 const byte COLS = 4;
 
-// 定义键盘上的按键符号
+// Define keypad button symbols
 char keys[ROWS][COLS] = {
   {'1', '2', '3', 'A'},
   {'4', '5', '6', 'B'},
@@ -25,86 +25,86 @@ char keys[ROWS][COLS] = {
   {'*', '0', '#', 'D'}
 };
 
-// 键盘引脚定义
-byte rowPins[ROWS] = {32, 33, 25, 26}; // 根据您的实际连接修改
-byte colPins[COLS] = {27, 14, 12, 13}; // 根据您的实际连接修改
+// Keypad pin definitions
+byte rowPins[ROWS] = {32, 33, 25, 26}; // Modify according to your actual connections
+byte colPins[COLS] = {27, 14, 12, 13}; // Modify according to your actual connections
 
-// 创建对象
-MFRC522 rfid(SS_PIN, RST_PIN);  // 创建MFRC522实例
+// Create objects
+MFRC522 rfid(SS_PIN, RST_PIN);  // Create MFRC522 instance
 Keypad keypad = Keypad(makeKeymap(keys), rowPins, colPins, ROWS, COLS);
-Servo doorLock;  // 创建舵机对象
+Servo doorLock;  // Create servo object
 
-// 授权的RFID卡UID (82 46 B8 02)
+// Authorized RFID card UID (82 46 B8 02)
 byte authorizedUID[4] = {0x82, 0x46, 0xB8, 0x02};
 
-// 设置密码
+// Set password
 const char* PASSWORD = "0530";
 const byte PASSWORD_LENGTH = 4;
 
-// 存储用户输入
-char enteredKeys[10]; // 可以存储更长的输入
+// Store user input
+char enteredKeys[10]; // Can store longer input
 byte currentPosition = 0;
 
-// 门锁状态
+// Door lock status
 bool doorIsOpen = false;
-unsigned long doorOpenTime = 0; // 记录开门时间
-const unsigned long DOOR_OPEN_DURATION = 5000; // 门保持打开的时间(毫秒)
+unsigned long doorOpenTime = 0; // Record door open time
+const unsigned long DOOR_OPEN_DURATION = 5000; // Time door remains open (milliseconds)
 
 void setup() {
   Serial.begin(115200);
-  SPI.begin();            // 初始化SPI总线
-  rfid.PCD_Init();        // 初始化MFRC522
-  doorLock.attach(SERVO_PIN); // 初始化舵机
+  SPI.begin();            // Initialize SPI bus
+  rfid.PCD_Init();        // Initialize MFRC522
+  doorLock.attach(SERVO_PIN); // Initialize servo
   
   pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, LOW); // 默认LED关闭
+  digitalWrite(LED_PIN, LOW); // Default LED off
   
-  // 确保门初始状态为关闭
+  // Ensure door is initially closed
   closeDoor();
   
-  Serial.println("智能门锁系统已启动");
-  Serial.println("请使用授权卡或输入密码：");
+  Serial.println("Smart door lock system started");
+  Serial.println("Please use authorized card or enter password:");
 }
 
 void loop() {
-  // 检查门是否需要自动关闭
+  // Check if door needs to be automatically closed
   if (doorIsOpen && (millis() - doorOpenTime > DOOR_OPEN_DURATION)) {
     closeDoor();
   }
   
-  // 检查RFID卡
+  // Check RFID card
   checkRFID();
   
-  // 检查键盘输入
+  // Check keypad input
   checkKeypad();
 }
 
 void checkRFID() {
-  // 寻找新卡
+  // Look for new cards
   if (!rfid.PICC_IsNewCardPresent() || !rfid.PICC_ReadCardSerial()) {
     return;
   }
   
-  // 显示卡片的UID
-  Serial.print("检测到卡片UID:");
+  // Display card UID
+  Serial.print("Card UID detected:");
   for (byte i = 0; i < rfid.uid.size; i++) {
     Serial.print(rfid.uid.uidByte[i] < 0x10 ? " 0" : " ");
     Serial.print(rfid.uid.uidByte[i], HEX);
   }
   Serial.println();
   
-  // 检查是否是授权卡片
+  // Check if it's an authorized card
   if (compareUID(rfid.uid.uidByte, authorizedUID, rfid.uid.size)) {
-    Serial.println("授权卡片已识别!");
+    Serial.println("Authorized card recognized!");
     openDoor();
   } else {
-    Serial.println("未授权的卡片");
+    Serial.println("Unauthorized card");
     errorBlink();
   }
   
-  // 停止PICC
+  // Stop PICC
   rfid.PICC_HaltA();
-  // 停止加密
+  // Stop encryption
   rfid.PCD_StopCrypto1();
 }
 
@@ -112,50 +112,50 @@ void checkKeypad() {
   char key = keypad.getKey();
   
   if (key) {
-    // 按键反馈 - 短闪一下LED
+    // Key feedback - short LED flash
     digitalWrite(LED_PIN, HIGH);
     delay(50);
     digitalWrite(LED_PIN, LOW);
     
-    // 处理特殊键
+    // Handle special keys
     if (key == '*') {
-      // '*'键用于清除输入
+      // '*' key used to clear input
       resetInput();
-      Serial.println("\n输入已清除，请重新输入:");
+      Serial.println("\nInput cleared, please enter again:");
     } 
     else if (key == '#') {
-      // '#'键用于确认输入并验证密码
+      // '#' key used to confirm input and verify password
       verifyPassword();
     }
     else {
-      // 存储按键并显示(用*号代替实际数字增加安全性)
-      if (currentPosition < 9) { // 预留一位给结束符'\0'
+      // Store key press and display (* for security)
+      if (currentPosition < 9) { // Reserve one position for null terminator
         enteredKeys[currentPosition++] = key;
-        enteredKeys[currentPosition] = '\0'; // 确保字符串正确终止
+        enteredKeys[currentPosition] = '\0'; // Ensure string is properly terminated
         Serial.print("*");
       }
     }
   }
 }
 
-// 重置输入
+// Reset input
 void resetInput() {
   currentPosition = 0;
   enteredKeys[0] = '\0';
 }
 
-// 验证密码
+// Verify password
 void verifyPassword() {
-  Serial.println("\n正在验证密码...");
+  Serial.println("\nVerifying password...");
   
-  // 比较输入的密码和存储的密码
+  // Compare entered password with stored password
   bool passwordCorrect = true;
   
-  // 检查长度是否相同
+  // Check if length is the same
   if (currentPosition != PASSWORD_LENGTH) {
     passwordCorrect = false;
   } else {
-    // 逐字符比较
+    // Compare character by character
     for (byte i = 0; i < PASSWORD_LENGTH; i++) {
       if (enteredKeys[i] != PASSWORD[i]) {
         passwordCorrect = false;
@@ -164,21 +164,21 @@ void verifyPassword() {
     }
   }
   
-  // 根据验证结果执行操作
+  // Execute actions based on verification result
   if (passwordCorrect) {
-    Serial.println("密码正确! 门已开启!");
+    Serial.println("Correct password! Door opened!");
     openDoor();
   } else {
-    Serial.println("密码错误! 请重试.");
+    Serial.println("Incorrect password! Please try again.");
     errorBlink();
   }
   
-  // 重置输入以准备下一次尝试
+  // Reset input for next attempt
   resetInput();
-  Serial.println("请使用授权卡或输入密码：");
+  Serial.println("Please use authorized card or enter password:");
 }
 
-// 比较两个UID是否相同
+// Compare two UIDs for equality
 bool compareUID(byte* uid1, byte* uid2, byte size) {
   for (byte i = 0; i < size; i++) {
     if (uid1[i] != uid2[i]) {
@@ -188,27 +188,27 @@ bool compareUID(byte* uid1, byte* uid2, byte size) {
   return true;
 }
 
-// 打开门
+// Open door
 void openDoor() {
   if (!doorIsOpen) {
-    Serial.println("打开门...");
-    doorLock.write(90); // 舵机转到90度位置
+    Serial.println("Opening door...");
+    doorLock.write(90); // Rotate servo to 90 degrees
     successBlink();
     doorIsOpen = true;
-    doorOpenTime = millis(); // 记录开门时间
+    doorOpenTime = millis(); // Record door open time
   }
 }
 
-// 关闭门
+// Close door
 void closeDoor() {
   if (doorIsOpen) {
-    Serial.println("关闭门...");
-    doorLock.write(0); // 舵机转回0度位置
+    Serial.println("Closing door...");
+    doorLock.write(0); // Rotate servo back to 0 degrees
     doorIsOpen = false;
   }
 }
 
-// 成功时的LED闪烁模式
+// LED blinking pattern for success
 void successBlink() {
   for (int i = 0; i < 5; i++) {
     digitalWrite(LED_PIN, HIGH);
@@ -218,7 +218,7 @@ void successBlink() {
   }
 }
 
-// 错误时的LED闪烁模式
+// LED blinking pattern for error
 void errorBlink() {
   for (int i = 0; i < 3; i++) {
     digitalWrite(LED_PIN, HIGH);
